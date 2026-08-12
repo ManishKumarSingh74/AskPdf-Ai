@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
+import axios from 'axios';
 import { Upload, FileText, AlertTriangle, Loader2, X } from 'lucide-react';
-import { documentApi } from '../../services/documentApi';
 
 export default function DocumentUploader({ onUploadSuccess }) {
   const [isDragging, setIsDragging] = useState(false);
@@ -27,16 +27,26 @@ export default function DocumentUploader({ onUploadSuccess }) {
     setUploadProgress(0);
 
     try {
-      const response = await documentApi.uploadDocument(file, (progress) => {
-        setUploadProgress(progress);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await axios.post('/api/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percent);
+          }
+        },
       });
 
-      if (response.success && onUploadSuccess) {
-        onUploadSuccess(response.document);
+      if (response.data.success && onUploadSuccess) {
+        onUploadSuccess(response.data.document);
       }
     } catch (error) {
       console.error('[Upload Error]:', error);
-      setErrorMessage(error.message || 'Failed to upload document.');
+      const msg = error.response?.data?.message || error.message || 'Failed to upload document.';
+      setErrorMessage(msg);
     } finally {
       setIsUploading(false);
       setUploadProgress(0);

@@ -91,11 +91,9 @@ app.post('/api/upload', upload.single('file'), async (req, res, next) => {
       status: 'uploading',
     });
 
-    processPdfDocument(doc._id, req.file.path).catch((err) => {
-      console.error(`[Background Processing Error]:`, err.message);
-    });
-
-    res.status(201).json({ success: true, document: doc });
+    await processPdfDocument(doc._id, req.file.path);
+    const readyDoc = await Document.findById(doc._id);
+    res.status(201).json({ success: true, document: readyDoc });
   } catch (error) {
     next(error);
   }

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { FileText, Trash2, MessageSquare, AlertCircle, CheckCircle2, Clock, Loader2 } from 'lucide-react';
 import DocumentUploader from '../components/document/DocumentUploader';
-import { documentApi } from '../services/documentApi';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -12,9 +12,9 @@ export default function Dashboard() {
   const fetchDocument = async () => {
     try {
       setIsLoading(true);
-      const data = await documentApi.getDocument();
-      if (data.success && data.document) {
-        setDocument(data.document);
+      const res = await axios.get('/api/document');
+      if (res.data.success && res.data.document) {
+        setDocument(res.data.document);
       } else {
         setDocument(null);
       }
@@ -31,7 +31,6 @@ export default function Dashboard() {
 
   const handleUploadSuccess = (uploadedDoc) => {
     setDocument(uploadedDoc);
-    navigate('/chat');
   };
 
   const handleDeleteDocument = async (e) => {
@@ -39,10 +38,10 @@ export default function Dashboard() {
     if (!window.confirm('Are you sure you want to delete this PDF?')) return;
 
     try {
-      await documentApi.deleteDocument();
+      await axios.delete('/api/document');
       setDocument(null);
     } catch (err) {
-      alert(err.message || 'Failed to delete document');
+      alert(err.response?.data?.message || err.message || 'Failed to delete document');
     }
   };
 
@@ -119,8 +118,10 @@ export default function Dashboard() {
           </div>
         ) : (
           <div
-            onClick={() => navigate('/chat')}
-            className="bg-white rounded-xl p-6 border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 cursor-pointer"
+            onClick={() => document.status === 'ready' && navigate('/chat')}
+            className={`bg-white rounded-xl p-6 border border-slate-200 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+              document.status === 'ready' ? 'hover:border-blue-400 hover:shadow-md cursor-pointer' : 'opacity-80 cursor-default'
+            }`}
           >
             <div className="flex items-center gap-4 overflow-hidden">
               <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 shrink-0">
@@ -143,9 +144,14 @@ export default function Dashboard() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    navigate('/chat');
+                    if (document.status === 'ready') navigate('/chat');
                   }}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors shadow-sm"
+                  disabled={document.status !== 'ready'}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-xs font-semibold transition-colors shadow-sm ${
+                    document.status === 'ready'
+                      ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
+                      : 'bg-slate-300 cursor-not-allowed opacity-60'
+                  }`}
                 >
                   <MessageSquare className="h-4 w-4" />
                   Ask Questions

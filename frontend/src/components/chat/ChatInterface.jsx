@@ -1,18 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
+import axios from 'axios';
 import { Send, Bot, User, Sparkles, FileText, ExternalLink, Loader2 } from 'lucide-react';
-import { chatApi } from '../../services/chatApi';
 
-export default function ChatInterface({
-  conversationId,
-  selectedDocIds = [],
-  onConversationCreated,
-  onCitationClick,
-}) {
+export default function ChatInterface({ onCitationClick }) {
   const [messages, setMessages] = useState([]);
   const [inputQuestion, setInputQuestion] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [streamingText, setStreamingText] = useState('');
-  const [currentSources, setCurrentSources] = useState([]);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -21,86 +14,59 @@ export default function ChatInterface({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, streamingText]);
+  }, [messages, isGenerating]);
 
   useEffect(() => {
-    if (conversationId) {
-      chatApi
-        .getConversationById(conversationId)
-        .then((data) => {
-          if (data.success) {
-            setMessages(data.messages || []);
-          }
-        })
-        .catch((err) => console.error('[Load Conversation Error]:', err));
-    } else {
-      setMessages([]);
-    }
-  }, [conversationId]);
+    axios
+      .get('/api/messages')
+      .then((res) => {
+        if (res.data.success) {
+          setMessages(res.data.messages || []);
+        }
+      })
+      .catch((err) => console.error('[Load Messages Error]:', err));
+  }, []);
 
   const handleSendMessage = async (e) => {
     e?.preventDefault();
     if (!inputQuestion.trim() || isGenerating) return;
 
-    const userMessageText = inputQuestion.trim();
+    const userQuestionText = inputQuestion.trim();
     setInputQuestion('');
 
-    const newUserMsg = { role: 'user', content: userMessageText, _id: Date.now().toString() };
+    const newUserMsg = { role: 'user', content: userQuestionText, _id: Date.now().toString() };
     setMessages((prev) => [...prev, newUserMsg]);
 
     setIsGenerating(true);
-    setStreamingText('');
-    setCurrentSources([]);
 
-    let activeConvId = conversationId;
-    let accumText = '';
+    try {
+      const response = await axios.post('/api/chat', { question: userQuestionText });
+      const { answer, sources } = response.data;
 
-    await chatApi.sendMessageStream({
-      conversationId: activeConvId,
-      documentIds: selectedDocIds,
-      question: userMessageText,
-      onMetadata: (meta) => {
-        if (meta.conversationId && !activeConvId) {
-          activeConvId = meta.conversationId;
-          if (onConversationCreated) onConversationCreated(activeConvId);
-        }
-        if (meta.sources) {
-          setCurrentSources(meta.sources);
-        }
-      },
-      onChunk: (chunkText) => {
-        accumText += chunkText;
-        setStreamingText(accumText);
-      },
-      onDone: (doneData) => {
-        setIsGenerating(false);
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: doneData.fullAnswer || accumText,
-            sources: doneData.sources || currentSources,
-            _id: Date.now().toString(),
-          },
-        ]);
-        setStreamingText('');
-        setCurrentSources([]);
-      },
-      onError: (err) => {
-        console.error('[Stream Error]:', err);
-        setIsGenerating(false);
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: `Error generating answer: ${err.message}`,
-            sources: [],
-            _id: Date.now().toString(),
-          },
-        ]);
-        setStreamingText('');
-      },
-    });
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: answer,
+          sources: sources || [],
+          _id: Date.now().toString(),
+        },
+      ]);
+    } catch (error) {
+      console.error('[Chat Error]:', error);
+      const errorMsg = error.response?.data?.message || error.message || 'Error generating answer.';
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `Error: ${errorMsg}`,
+          sources: [],
+          _id: Date.now().toString(),
+        },
+      ]);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -177,7 +143,6 @@ export default function ChatInterface({
                         onClick={() =>
                           onCitationClick &&
                           onCitationClick({
-                            documentId: src.documentId,
                             pageNumber: src.pageNumber,
                           })
                         }
@@ -208,32 +173,10 @@ export default function ChatInterface({
             </div>
 
             <div className="max-w-[85%] rounded-xl p-3.5 bg-slate-50 border border-slate-200 text-slate-800 rounded-bl-none space-y-2 text-xs leading-relaxed">
-              {streamingText ? (
-                <div className="whitespace-pre-wrap">{streamingText}</div>
-              ) : (
-                <div className="flex items-center gap-2 text-blue-600 font-medium">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span>Searching PDF & generating answer...</span>
-                </div>
-              )}
-
-              {currentSources.length > 0 && (
-                <div className="pt-2 border-t border-slate-200 space-y-1">
-                  <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">
-                    Sources:
-                  </span>
-                  <div className="flex flex-wrap gap-1">
-                    {currentSources.map((src, sIdx) => (
-                      <span
-                        key={sIdx}
-                        className="inline-flex items-center px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-600"
-                      >
-                        Page {src.pageNumber}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <div className="flex items-center gap-2 text-blue-600 font-medium">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Searching PDF & generating answer...</span>
+              </div>
             </div>
           </div>
         )}
