@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../services/api';
 import { Send, Bot, User, Sparkles, FileText, ExternalLink, Loader2 } from 'lucide-react';
 
 export default function ChatInterface({ onCitationClick }) {
@@ -17,11 +17,11 @@ export default function ChatInterface({ onCitationClick }) {
   }, [messages, isGenerating]);
 
   useEffect(() => {
-    axios
-      .get('/api/messages')
+    api
+      .get('/messages')
       .then((res) => {
-        if (res.data.success) {
-          setMessages(res.data.messages || []);
+        if (res && res.success) {
+          setMessages(res.messages || []);
         }
       })
       .catch((err) => console.error('[Load Messages Error]:', err));
@@ -40,8 +40,8 @@ export default function ChatInterface({ onCitationClick }) {
     setIsGenerating(true);
 
     try {
-      const response = await axios.post('/api/chat', { question: userQuestionText });
-      const { answer, sources } = response.data;
+      const response = await api.post('/chat', { question: userQuestionText });
+      const { answer, sources } = response;
 
       setMessages((prev) => [
         ...prev,
@@ -54,7 +54,7 @@ export default function ChatInterface({ onCitationClick }) {
       ]);
     } catch (error) {
       console.error('[Chat Error]:', error);
-      const errorMsg = error.response?.data?.message || error.message || 'Error generating answer.';
+      const errorMsg = error.message || 'Error generating answer.';
       setMessages((prev) => [
         ...prev,
         {

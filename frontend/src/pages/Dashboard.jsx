@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/api';
 import { FileText, Trash2, MessageSquare, AlertCircle, CheckCircle2, Clock, Loader2 } from 'lucide-react';
 import DocumentUploader from '../components/document/DocumentUploader';
 
@@ -12,9 +12,9 @@ export default function Dashboard() {
   const fetchDocument = async () => {
     try {
       setIsLoading(true);
-      const res = await axios.get('/api/document');
-      if (res.data.success && res.data.document) {
-        setDocument(res.data.document);
+      const res = await api.get('/document');
+      if (res && res.success && res.document) {
+        setDocument(res.document);
       } else {
         setDocument(null);
       }
@@ -38,10 +38,10 @@ export default function Dashboard() {
     if (!window.confirm('Are you sure you want to delete this PDF?')) return;
 
     try {
-      await axios.delete('/api/document');
+      await api.delete('/document');
       setDocument(null);
     } catch (err) {
-      alert(err.response?.data?.message || err.message || 'Failed to delete document');
+      alert(err.message || 'Failed to delete document');
     }
   };
 
@@ -134,6 +134,11 @@ export default function Dashboard() {
                 <p className="text-xs text-slate-500 mt-1">
                   {formatFileSize(document.fileSize)} • {document.pageCount || 0} pages
                 </p>
+                {document.status === 'failed' && document.processingError && (
+                  <p className="text-xs text-red-600 font-medium mt-1">
+                    Error: {document.processingError}
+                  </p>
+                )}
               </div>
             </div>
 

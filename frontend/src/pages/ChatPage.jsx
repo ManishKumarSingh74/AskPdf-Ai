@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/api';
 import PDFViewer from '../components/pdf/PDFViewer';
 import ChatInterface from '../components/chat/ChatInterface';
 
@@ -11,9 +11,9 @@ export default function ChatPage() {
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
-    axios.get('/api/document').then((res) => {
-      if (res.data.success && res.data.document) {
-        setDocument(res.data.document);
+    api.get('/document').then((res) => {
+      if (res && res.success && res.document) {
+        setDocument(res.document);
       }
     });
   }, []);

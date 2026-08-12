@@ -40,6 +40,8 @@ const upload = multer({
 
 const app = express();
 
+app.set('trust proxy', 1);
+
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use('/uploads', express.static(uploadsDir));
@@ -93,6 +95,15 @@ app.post('/api/upload', upload.single('file'), async (req, res, next) => {
 
     await processPdfDocument(doc._id, req.file.path);
     const readyDoc = await Document.findById(doc._id);
+    
+    if (readyDoc && readyDoc.status === 'failed') {
+      return res.status(400).json({
+        success: false,
+        message: readyDoc.processingError || 'Failed to process PDF document. Please check your Gemini API key and try again.',
+        document: readyDoc,
+      });
+    }
+
     res.status(201).json({ success: true, document: readyDoc });
   } catch (error) {
     next(error);

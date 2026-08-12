@@ -74,7 +74,7 @@ export const processPdfDocument = async (documentId, filePath) => {
     doc.pageCount = pages.length;
     await doc.save();
 
-    const chunksToInsert = [];
+    const rawChunks = [];
     let chunkIndex = 0;
 
     for (const page of pages) {
@@ -87,12 +87,10 @@ export const processPdfDocument = async (documentId, filePath) => {
         if (!cleanPara) continue;
 
         if (currentText.length + cleanPara.length > 800 && currentText.length > 0) {
-          const vector = await generateEmbedding(currentText);
-          chunksToInsert.push({
+          rawChunks.push({
             content: currentText,
             pageNumber: page.pageNumber,
             chunkIndex: chunkIndex++,
-            embedding: vector,
           });
 
           currentText = currentText.slice(-150) + ' ' + cleanPara;
@@ -102,18 +100,30 @@ export const processPdfDocument = async (documentId, filePath) => {
       }
 
       if (currentText.trim().length > 0) {
-        const vector = await generateEmbedding(currentText);
-        chunksToInsert.push({
+        rawChunks.push({
           content: currentText.trim(),
           pageNumber: page.pageNumber,
           chunkIndex: chunkIndex++,
-          embedding: vector,
         });
       }
     }
 
-    if (chunksToInsert.length === 0) {
+    if (rawChunks.length === 0) {
       throw new Error('This PDF contains no extractable text.');
+    }
+
+    const BATCH_SIZE = 5;
+    const chunksToInsert = [];
+
+    for (let i = 0; i < rawChunks.length; i += BATCH_SIZE) {
+      const batch = rawChunks.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(async (chunk) => {
+          const vector = await generateEmbedding(chunk.content);
+          return { ...chunk, embedding: vector };
+        })
+      );
+      chunksToInsert.push(...batchResults);
     }
 
     await DocumentChunk.deleteMany({});
