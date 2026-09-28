@@ -26,9 +26,25 @@ const upload = multer({
 
 const app = express();
 
-app.set('trust proxy', 1);
+const allowedOrigins = [
+  'https://askpdf-ai-g2x7.onrender.com',
+  process.env.CLIENT_URL,
+  'http://localhost:5173',
+  'http://localhost:3000',
+].filter(Boolean);
 
-app.use(cors({ origin: true, credentials: true }));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin) || allowedOrigins.some((o) => origin.startsWith(o))) {
+        callback(null, true);
+      } else {
+        callback(null, true);
+      }
+    },
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: '50mb' }));
 
 app.use(async (req, res, next) => {
