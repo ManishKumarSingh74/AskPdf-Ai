@@ -15,7 +15,11 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
 
-const GENERATION_MODEL = 'gemini-2.5-flash';
+const GENERATION_MODELS = [
+  'gemini-3.5-flash-lite',
+  'gemini-flash-latest',
+  'gemini-3.8-flash',
+];
 const EMBEDDING_MODEL = 'gemini-embedding-001';
 
 const getGeminiClient = () => {
@@ -25,10 +29,19 @@ const getGeminiClient = () => {
 
 export const generateEmbedding = async (text) => {
   const ai = getGeminiClient();
-  const response = await ai.models.embedContent({
-    model: EMBEDDING_MODEL,
-    contents: text,
-  });
+  let response;
+  try {
+    response = await ai.models.embedContent({
+      model: EMBEDDING_MODEL,
+      contents: text,
+    });
+  } catch (err) {
+    console.warn(`[Embedding Fallback] ${EMBEDDING_MODEL} failed, retrying with gemini-embedding-001:`, err.message);
+    response = await ai.models.embedContent({
+      model: 'gemini-embedding-001',
+      contents: text,
+    });
+  }
 
   if (response.embeddings && response.embeddings[0] && response.embeddings[0].values) {
     return response.embeddings[0].values;
@@ -50,7 +63,7 @@ export const cosineSimilarity = (vecA, vecB) => {
   return normA && normB ? dot / (Math.sqrt(normA) * Math.sqrt(normB)) : 0;
 };
 
-export const processPdfDocument = async (documentId, filePath) => {
+export const processPdfDocument = async (documentId, fileInput) => {
   const doc = await Document.findById(documentId);
   if (!doc) return;
 
@@ -58,7 +71,22 @@ export const processPdfDocument = async (documentId, filePath) => {
     doc.status = 'processing';
     await doc.save();
 
-    const fileBuffer = await fs.promises.readFile(filePath);
+    let fileBuffer;
+    if (Buffer.isBuffer(fileInput)) {
+      fileBuffer = fileInput;
+    } else if (typeof fileInput === 'string' && (fileInput.startsWith('http://') || fileInput.startsWith('https://'))) {
+      const response = await fetch(fileInput);
+      const arrayBuffer = await response.arrayBuffer();
+      fileBuffer = Buffer.from(arrayBuffer);
+    } else if (typeof fileInput === 'string' && fs.existsSync(fileInput)) {
+      fileBuffer = await fs.promises.readFile(fileInput);
+    } else if (doc.fileUrl && (doc.fileUrl.startsWith('http://') || doc.fileUrl.startsWith('https://'))) {
+      const response = await fetch(doc.fileUrl);
+      const arrayBuffer = await response.arrayBuffer();
+      fileBuffer = Buffer.from(arrayBuffer);
+    } else {
+      throw new Error('No valid PDF buffer or URL available for processing.');
+    }
 
     const pages = [];
     await pdfParse(fileBuffer, {
@@ -142,7 +170,7 @@ export const processPdfDocument = async (documentId, filePath) => {
   }
 };
 
-export const queryRagStream = async ({ question }, res) => {
+export const queryRag = async ({ question }) => {
   const ai = getGeminiClient();
 
   await Message.create({ role: 'user', content: question });
@@ -178,31 +206,42 @@ Always include the page number citations in your explanation.`;
 
   const prompt = `${contextBlocks}\n--- User Question ---\n${question}`;
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
+  let response;
+  let lastError;
 
-  res.write(`data: ${JSON.stringify({ type: 'metadata', sources })}\n\n`);
-
-  const responseStream = await ai.models.generateContentStream({
-    model: GENERATION_MODEL,
-    contents: prompt,
-    config: { systemInstruction, temperature: 0.2 },
-  });
-
-  let fullAnswer = '';
-  for await (const chunk of responseStream) {
-    const text = chunk.text || '';
-    fullAnswer += text;
-    res.write(`data: ${JSON.stringify({ type: 'chunk', text })}\n\n`);
+  for (const model of GENERATION_MODELS) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: { systemInstruction, temperature: 0.2 },
+        });
+        if (response && (response.text || (response.candidates && response.candidates[0]?.content?.parts[0]?.text))) {
+          break;
+        }
+      } catch (err) {
+        lastError = err;
+        console.warn(`[RAG Warning] Model ${model} (attempt ${attempt}) failed:`, err.message);
+        await new Promise((r) => setTimeout(r, 800));
+      }
+    }
+    if (response && (response.text || (response.candidates && response.candidates[0]?.content?.parts[0]?.text))) {
+      break;
+    }
   }
+
+  if (!response) {
+    throw new Error(lastError ? lastError.message : 'All Gemini models failed to generate content.');
+  }
+
+  const answer = response.text || (response.candidates && response.candidates[0]?.content?.parts[0]?.text) || 'I could not generate an answer.';
 
   await Message.create({
     role: 'assistant',
-    content: fullAnswer,
+    content: answer,
     sources,
   });
 
-  res.write(`data: ${JSON.stringify({ type: 'done', fullAnswer, sources })}\n\n`);
-  res.end();
+  return { answer, sources };
 };

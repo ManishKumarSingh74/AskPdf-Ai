@@ -36,6 +36,7 @@ const DocumentSchema = new mongoose.Schema(
     originalName: { type: String, required: true },
     filename: { type: String, required: true },
     fileUrl: { type: String, required: true },
+    publicId: { type: String, default: null },
     fileSize: { type: Number, required: true },
     pageCount: { type: Number, default: 0 },
     status: { type: String, enum: ['uploading', 'processing', 'ready', 'failed'], default: 'uploading' },

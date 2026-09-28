@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import api from '../../services/api';
+import { chatApi } from '../../services/chatApi';
 import { Send, Bot, User, Sparkles, FileText, ExternalLink, Loader2 } from 'lucide-react';
 
 export default function ChatInterface({ onCitationClick }) {
@@ -17,8 +17,8 @@ export default function ChatInterface({ onCitationClick }) {
   }, [messages, isGenerating]);
 
   useEffect(() => {
-    api
-      .get('/messages')
+    chatApi
+      .getMessages()
       .then((res) => {
         if (res && res.success) {
           setMessages(res.messages || []);
@@ -34,24 +34,38 @@ export default function ChatInterface({ onCitationClick }) {
     const userQuestionText = inputQuestion.trim();
     setInputQuestion('');
 
-    const newUserMsg = { role: 'user', content: userQuestionText, _id: Date.now().toString() };
-    setMessages((prev) => [...prev, newUserMsg]);
+    const userMsgId = Date.now().toString();
+    const newUserMsg = { role: 'user', content: userQuestionText, _id: userMsgId };
 
+    setMessages((prev) => [...prev, newUserMsg]);
     setIsGenerating(true);
 
     try {
-      const response = await api.post('/chat', { question: userQuestionText });
-      const { answer, sources } = response;
+      const res = await chatApi.sendMessage(userQuestionText);
+      const assistantMsgId = (Date.now() + 1).toString();
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: answer,
-          sources: sources || [],
-          _id: Date.now().toString(),
-        },
-      ]);
+      if (res && res.success === false) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `Error: ${res.message || 'Failed to generate answer.'}`,
+            sources: [],
+            _id: assistantMsgId,
+          },
+        ]);
+      } else {
+        const answerText = res?.answer || (typeof res === 'string' ? res : null);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: answerText || 'I could not generate an answer from the PDF.',
+            sources: res?.sources || [],
+            _id: assistantMsgId,
+          },
+        ]);
+      }
     } catch (error) {
       console.error('[Chat Error]:', error);
       const errorMsg = error.message || 'Error generating answer.';

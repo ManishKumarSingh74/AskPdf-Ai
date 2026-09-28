@@ -4,30 +4,16 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { connectDB, Document, DocumentChunk, Message } from './db.js';
-import { processPdfDocument, queryRagStream } from './rag.js';
+import { processPdfDocument, queryRag } from './rag.js';
+import { uploadToCloudinary, deleteFromCloudinary } from './cloudinary.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const uploadsDir = path.join(__dirname, '../uploads');
-
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const unique = Date.now() + '-' + crypto.randomBytes(4).toString('hex');
-    cb(null, `${path.basename(file.originalname, ext)}-${unique}${ext}`);
-  },
-});
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf')) {
@@ -44,7 +30,6 @@ app.set('trust proxy', 1);
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
-app.use('/uploads', express.static(uploadsDir));
 
 app.use(async (req, res, next) => {
   if (req.path === '/api/health') return next();
@@ -71,31 +56,34 @@ app.get('/api/health', (req, res) => {
 
 app.post('/api/upload', upload.single('file'), async (req, res, next) => {
   try {
-    if (!req.file) {
+    if (!req.file || !req.file.buffer) {
       return res.status(400).json({ success: false, message: 'Please select a PDF file to upload.' });
     }
 
     const oldDocs = await Document.find();
     for (const oldDoc of oldDocs) {
-      const oldPath = path.join(uploadsDir, oldDoc.filename);
-      if (fs.existsSync(oldPath)) await fs.promises.unlink(oldPath);
+      if (oldDoc.publicId) {
+        await deleteFromCloudinary(oldDoc.publicId);
+      }
     }
     await Document.deleteMany({});
     await DocumentChunk.deleteMany({});
     await Message.deleteMany({});
 
-    const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    const cloudinaryResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+
     const doc = await Document.create({
       originalName: req.file.originalname,
-      filename: req.file.filename,
-      fileUrl,
+      filename: cloudinaryResult.public_id,
+      fileUrl: cloudinaryResult.secure_url,
+      publicId: cloudinaryResult.public_id,
       fileSize: req.file.size,
       status: 'uploading',
     });
 
-    await processPdfDocument(doc._id, req.file.path);
+    await processPdfDocument(doc._id, req.file.buffer);
     const readyDoc = await Document.findById(doc._id);
-    
+
     if (readyDoc && readyDoc.status === 'failed') {
       return res.status(400).json({
         success: false,
@@ -123,8 +111,9 @@ app.delete('/api/document', async (req, res, next) => {
   try {
     const oldDocs = await Document.find();
     for (const oldDoc of oldDocs) {
-      const oldPath = path.join(uploadsDir, oldDoc.filename);
-      if (fs.existsSync(oldPath)) await fs.promises.unlink(oldPath);
+      if (oldDoc.publicId) {
+        await deleteFromCloudinary(oldDoc.publicId);
+      }
     }
     await Document.deleteMany({});
     await DocumentChunk.deleteMany({});
@@ -141,7 +130,8 @@ app.post('/api/chat', async (req, res, next) => {
     if (!question) {
       return res.status(400).json({ success: false, message: 'Question is required.' });
     }
-    await queryRagStream(req.body, res);
+    const result = await queryRag({ question });
+    res.json({ success: true, answer: result.answer, sources: result.sources });
   } catch (error) {
     next(error);
   }

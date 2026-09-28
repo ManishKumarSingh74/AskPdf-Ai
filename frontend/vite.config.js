@@ -7,11 +7,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'https://askpdf-ai-bctu.onrender.com',
-        changeOrigin: true,
-      },
-      '/uploads': {
-        target: 'https://askpdf-ai-bctu.onrender.com',
+        target: 'http://localhost:3000',
         changeOrigin: true,
       },
     },
