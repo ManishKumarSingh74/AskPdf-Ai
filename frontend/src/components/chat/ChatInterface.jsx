@@ -1,11 +1,28 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { chatApi } from '../../services/chatApi';
-import { Send, Bot, User, Sparkles, FileText, ExternalLink, Loader2 } from 'lucide-react';
+import {
+  Send,
+  Bot,
+  User,
+  Sparkles,
+  FileText,
+  ExternalLink,
+  Loader2,
+  Copy,
+  Check,
+  Zap,
+  HelpCircle,
+  ShieldCheck,
+  Trash2,
+  Clock,
+  ListFilter,
+} from 'lucide-react';
 
 export default function ChatInterface({ onCitationClick }) {
   const [messages, setMessages] = useState([]);
   const [inputQuestion, setInputQuestion] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -27,22 +44,29 @@ export default function ChatInterface({ onCitationClick }) {
       .catch((err) => console.error('[Load Messages Error]:', err));
   }, []);
 
-  const handleSendMessage = async (e) => {
+  const handleSendMessage = async (e, customText) => {
     e?.preventDefault();
-    if (!inputQuestion.trim() || isGenerating) return;
+    const queryText = (customText || inputQuestion).trim();
+    if (!queryText || isGenerating) return;
 
-    const userQuestionText = inputQuestion.trim();
     setInputQuestion('');
 
     const userMsgId = Date.now().toString();
-    const newUserMsg = { role: 'user', content: userQuestionText, _id: userMsgId };
+    const userTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const newUserMsg = {
+      role: 'user',
+      content: queryText,
+      _id: userMsgId,
+      timestamp: userTimestamp,
+    };
 
     setMessages((prev) => [...prev, newUserMsg]);
     setIsGenerating(true);
 
     try {
-      const res = await chatApi.sendMessage(userQuestionText);
+      const res = await chatApi.sendMessage(queryText);
       const assistantMsgId = (Date.now() + 1).toString();
+      const assistantTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
       if (res && res.success === false) {
         setMessages((prev) => [
@@ -52,6 +76,7 @@ export default function ChatInterface({ onCitationClick }) {
             content: `Error: ${res.message || 'Failed to generate answer.'}`,
             sources: [],
             _id: assistantMsgId,
+            timestamp: assistantTimestamp,
           },
         ]);
       } else {
@@ -63,6 +88,7 @@ export default function ChatInterface({ onCitationClick }) {
             content: answerText || 'I could not generate an answer from the PDF.',
             sources: res?.sources || [],
             _id: assistantMsgId,
+            timestamp: assistantTimestamp,
           },
         ]);
       }
@@ -76,6 +102,7 @@ export default function ChatInterface({ onCitationClick }) {
           content: `Error: ${errorMsg}`,
           sources: [],
           _id: Date.now().toString(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
     } finally {
@@ -83,113 +110,196 @@ export default function ChatInterface({ onCitationClick }) {
     }
   };
 
+  const handleCopyText = (content, id) => {
+    if (!content) return;
+    navigator.clipboard.writeText(content);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleClearMessages = () => {
+    setMessages([]);
+  };
+
+  const sampleQuestions = [
+    { text: 'What is the main topic of this PDF?', icon: HelpCircle, category: 'Overview' },
+    { text: 'Summarize key points in simple terms.', icon: Zap, category: 'Summary' },
+    { text: 'What are the main findings or conclusions?', icon: ShieldCheck, category: 'Insights' },
+    { text: 'List the important requirements or rules.', icon: ListFilter, category: 'Details' },
+  ];
+
+  const quickPromptChips = [
+    'Summarize PDF',
+    'Key Takeaways',
+    'Main Findings',
+    'Requirements',
+  ];
+
   return (
-    <div className="flex flex-col h-full bg-white">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-blue-100 text-blue-600">
-            <Sparkles className="h-4 w-4" />
+    <div className="flex flex-col h-full bg-[#f5f5f7] font-sans antialiased text-[#1d1d1f]">
+      {/* Apple-Style Glassmorphic Header */}
+      <div className="flex items-center justify-between px-5 py-3.5 bg-white/80 backdrop-blur-md border-b border-black/[0.06] shrink-0 sticky top-0 z-20 shadow-[0_2px_12px_rgba(0,0,0,0.02)]">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-[#0071e3] text-white flex items-center justify-center shadow-md shadow-[#0071e3]/20">
+            <Sparkles className="h-4.5 w-4.5" />
           </div>
           <div>
-            <h3 className="font-bold text-sm text-slate-900">AskPDF <span className="text-blue-600">AI</span> Chat</h3>
-            <p className="text-xs text-slate-500">Ask questions about your PDF document</p>
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-sm text-[#1d1d1f] tracking-tight">
+                AskPDF <span className="text-[#0071e3] font-bold">AI</span>
+              </h3>
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-600 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                Gemini Intelligence
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 font-normal">Grounded Q&A with Page Citations</p>
           </div>
         </div>
+
+        {messages.length > 0 && (
+          <button
+            onClick={handleClearMessages}
+            className="p-2 rounded-full text-slate-400 hover:text-red-500 hover:bg-slate-100 transition-all duration-200"
+            title="Clear Chat View"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
-      <div className="flex-1 overflow-auto p-4 space-y-4 custom-scrollbar">
+      {/* Messages Scroll Area */}
+      <div className="flex-1 overflow-auto p-5 sm:p-8 space-y-6 custom-scrollbar">
         {messages.length === 0 && !isGenerating && (
-          <div className="my-8 text-center space-y-3 max-w-sm mx-auto">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center mx-auto text-blue-600">
-              <Bot className="h-5 w-5" />
+          <div className="my-8 text-center space-y-6 max-w-md mx-auto">
+            <div className="w-16 h-16 rounded-full bg-white border border-black/[0.06] text-[#0071e3] flex items-center justify-center mx-auto shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
+              <Bot className="h-8 w-8" />
             </div>
-            <h4 className="font-bold text-slate-800 text-sm">Ask a question about your document</h4>
-            <p className="text-xs text-slate-500">
-              Click a sample question to try:
-            </p>
-            <div className="space-y-2 text-xs">
-              {[
-                'What is the main topic of this PDF?',
-                'Summarize key points in simple terms.',
-                'What are the findings or conclusions?',
-              ].map((sample, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setInputQuestion(sample)}
-                  className="w-full text-left p-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-medium transition-colors"
-                >
-                  "{sample}"
-                </button>
-              ))}
+
+            <div className="space-y-1.5">
+              <h4 className="font-semibold text-[#1d1d1f] text-xl tracking-tight">How can I help with your PDF?</h4>
+              <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto font-normal">
+                Choose a suggested prompt or type a question below to analyze your document.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              {sampleQuestions.map((item, idx) => {
+                const SampleIcon = item.icon;
+                return (
+                  <button
+                    key={idx}
+                    onClick={(e) => handleSendMessage(e, item.text)}
+                    className="text-left p-4 rounded-2xl bg-white hover:bg-[#e8e8ed]/60 border border-black/[0.06] hover:border-[#0071e3]/30 text-[#1d1d1f] font-medium text-xs transition-all duration-200 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-[0_4px_16px_rgba(0,113,227,0.08)] flex flex-col justify-between space-y-3 group cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <SampleIcon className="h-4 w-4 text-[#0071e3] group-hover:scale-110 transition-transform shrink-0" />
+                      <span className="text-[10px] text-slate-400 font-medium bg-[#f5f5f7] px-2 py-0.5 rounded-full">
+                        {item.category}
+                      </span>
+                    </div>
+                    <span className="leading-relaxed text-slate-700 font-normal">"{item.text}"</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
 
-        {messages.map((msg, idx) => (
-          <div
-            key={msg._id || idx}
-            className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            {msg.role === 'assistant' && (
-              <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white shrink-0 mt-0.5 shadow-sm">
-                <Bot className="h-4 w-4" />
-              </div>
-            )}
-
+        {messages.map((msg, idx) => {
+          const msgKey = msg._id || idx.toString();
+          return (
             <div
-              className={`max-w-[85%] rounded-xl p-3.5 space-y-2 text-xs leading-relaxed ${
-                msg.role === 'user'
-                  ? 'bg-blue-600 text-white rounded-br-none font-medium'
-                  : 'bg-slate-50 border border-slate-200 text-slate-800 rounded-bl-none'
-              }`}
+              key={msgKey}
+              className={`flex gap-3.5 sm:gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div className="whitespace-pre-wrap">{msg.content}</div>
+              {msg.role === 'assistant' && (
+                <div className="w-9 h-9 rounded-full bg-[#0071e3] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-md shadow-[#0071e3]/20">
+                  <Bot className="h-4.5 w-4.5" />
+                </div>
+              )}
 
-              {msg.sources && msg.sources.length > 0 && (
-                <div className="pt-2.5 border-t border-slate-200/80 space-y-1">
-                  <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">
-                    Source Citations:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {msg.sources.map((src, sIdx) => (
-                      <button
-                        key={sIdx}
-                        onClick={() =>
-                          onCitationClick &&
-                          onCitationClick({
-                            pageNumber: src.pageNumber,
-                          })
-                        }
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 font-semibold transition-colors"
-                      >
-                        <FileText className="h-3 w-3 text-blue-600" />
-                        <span>Page {src.pageNumber}</span>
-                        <ExternalLink className="h-2.5 w-2.5 opacity-70" />
-                      </button>
-                    ))}
-                  </div>
+              <div
+                className={`max-w-[85%] text-xs sm:text-sm leading-relaxed transition-all ${
+                  msg.role === 'user'
+                    ? 'bg-[#0071e3] hover:bg-[#0077ed] text-white rounded-[24px] rounded-tr-[4px] px-6 py-4 shadow-[0_2px_12px_rgba(0,113,227,0.2)] font-medium space-y-3'
+                    : 'bg-white border border-black/[0.06] text-[#1d1d1f] rounded-[24px] rounded-tl-[4px] px-6 py-5 shadow-[0_2px_14px_rgba(0,0,0,0.03)] font-normal space-y-4'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div>
+
+                  {msg.role === 'assistant' && msg.content && (
+                    <button
+                      onClick={() => handleCopyText(msg.content, msgKey)}
+                      className="p-1 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors shrink-0"
+                      title="Copy response"
+                    >
+                      {copiedId === msgKey ? (
+                        <Check className="h-3.5 w-3.5 text-emerald-600" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                {/* Sources & Apple-Style Citation Pills */}
+                <div className="flex items-center justify-between pt-3.5 border-t border-black/[0.05] text-[11px]">
+                  {msg.sources && msg.sources.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1.5 w-full">
+                      <span className="font-semibold text-slate-400 block mr-1 text-[10px] uppercase tracking-wider">
+                        Citations:
+                      </span>
+                      {msg.sources.map((src, sIdx) => (
+                        <button
+                          key={sIdx}
+                          onClick={() =>
+                            onCitationClick &&
+                            onCitationClick({
+                              pageNumber: src.pageNumber,
+                            })
+                          }
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#f5f5f7] hover:bg-[#e8e8ed] text-[#0071e3] border border-black/[0.06] font-semibold text-[11px] transition-all duration-200 cursor-pointer shadow-2xs"
+                        >
+                          <FileText className="h-3 w-3 text-[#0071e3]" />
+                          <span>Page {src.pageNumber}</span>
+                          <ExternalLink className="h-2.5 w-2.5 opacity-60" />
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 font-normal">Generated via Gemini RAG</span>
+                  )}
+
+                  {msg.timestamp && (
+                    <span className="flex items-center gap-1 shrink-0 text-slate-400 text-[10px] font-normal ml-auto">
+                      <Clock className="h-2.5 w-2.5 opacity-60" />
+                      <span>{msg.timestamp}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {msg.role === 'user' && (
+                <div className="w-9 h-9 rounded-full bg-slate-200/80 text-slate-600 flex items-center justify-center shrink-0 mt-0.5">
+                  <User className="h-4.5 w-4.5" />
                 </div>
               )}
             </div>
-
-            {msg.role === 'user' && (
-              <div className="w-7 h-7 rounded-lg bg-slate-200 flex items-center justify-center text-slate-700 shrink-0 mt-0.5">
-                <User className="h-4 w-4" />
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
 
         {isGenerating && (
-          <div className="flex gap-3 justify-start">
-            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white shrink-0 mt-0.5 shadow-sm">
-              <Bot className="h-4 w-4" />
+          <div className="flex gap-3.5 sm:gap-4 justify-start">
+            <div className="w-9 h-9 rounded-full bg-[#0071e3] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-md shadow-[#0071e3]/20">
+              <Bot className="h-4.5 w-4.5" />
             </div>
 
-            <div className="max-w-[85%] rounded-xl p-3.5 bg-slate-50 border border-slate-200 text-slate-800 rounded-bl-none space-y-2 text-xs leading-relaxed">
-              <div className="flex items-center gap-2 text-blue-600 font-medium">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span>Searching PDF & generating answer...</span>
+            <div className="max-w-[85%] rounded-[24px] rounded-tl-[4px] px-6 py-5 bg-white border border-black/[0.06] text-[#1d1d1f] shadow-[0_2px_14px_rgba(0,0,0,0.03)] space-y-2 text-xs sm:text-sm">
+              <div className="flex items-center gap-2.5 text-[#0071e3] font-medium">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Searching document & generating answer...</span>
               </div>
             </div>
           </div>
@@ -198,23 +308,38 @@ export default function ChatInterface({ onCitationClick }) {
         <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={handleSendMessage} className="p-3 border-t border-slate-200 bg-slate-50 shrink-0">
-        <div className="relative flex items-center">
+      {/* Quick Prompt Chips Row */}
+      <div className="px-5 py-2.5 bg-white/50 border-t border-black/[0.04] flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
+        {quickPromptChips.map((chip, idx) => (
+          <button
+            key={idx}
+            disabled={isGenerating}
+            onClick={(e) => handleSendMessage(e, chip)}
+            className="px-3.5 py-1.5 rounded-full bg-white hover:bg-[#e8e8ed] text-[#1d1d1f] border border-black/[0.08] font-medium text-xs whitespace-nowrap transition-all duration-200 cursor-pointer shadow-[0_2px_6px_rgba(0,0,0,0.02)] disabled:opacity-50"
+          >
+            {chip}
+          </button>
+        ))}
+      </div>
+
+      {/* Apple-Style Input Form Bar */}
+      <form onSubmit={handleSendMessage} className="p-4 bg-white border-t border-black/[0.06] shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.02)]">
+        <div className="relative flex items-center max-w-3xl mx-auto">
           <input
             type="text"
-            placeholder="Type your question about the PDF..."
+            placeholder="Ask a question about your PDF..."
             value={inputQuestion}
             onChange={(e) => setInputQuestion(e.target.value)}
             disabled={isGenerating}
-            className="w-full pl-3 pr-10 py-2.5 rounded-lg bg-white border border-slate-300 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 transition-colors shadow-sm disabled:opacity-50"
+            className="w-full pl-5 pr-14 py-3 rounded-full bg-[#f5f5f7] border border-black/[0.08] focus:border-[#0071e3] focus:ring-4 focus:ring-[#0071e3]/10 text-xs sm:text-sm text-[#1d1d1f] placeholder-slate-400 transition-all duration-200 shadow-inner disabled:opacity-50 font-normal outline-none"
           />
 
           <button
             type="submit"
             disabled={!inputQuestion.trim() || isGenerating}
-            className="absolute right-1.5 p-1.5 rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-30 text-white transition-colors"
+            className="absolute right-1.5 p-2.5 rounded-full bg-[#0071e3] hover:bg-[#0077ed] disabled:opacity-30 text-white transition-all duration-200 shadow-md shadow-[#0071e3]/20 cursor-pointer disabled:cursor-not-allowed"
           >
-            {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>
         </div>
       </form>
